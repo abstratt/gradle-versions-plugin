@@ -1,0 +1,27 @@
+settings {
+  pluginManagement {
+    // The plugin is built from this repository; a build of your own gives the plugin a version instead.
+    includedBuilds ["../.."]
+  }
+  plugins [
+    { id "io.github.ben-manes.versions" }
+  ]
+  dependencyResolutionManagement {
+    repositories [:mavenCentral]
+  }
+  rootProject { name "gradle-versions-sample-xdcl" }
+
+  dependencyUpdates {
+    revision :release
+    outputFormatter [:plain, :json]
+    outputDir "build/dependencyUpdates"
+    reportFileName "report"
+    rejectPreReleases true
+    // A convention that the built-in pre-release markers do not cover.
+    preReleasePatterns ["-nf-"]
+    rejectVersions [
+      { group "com.google.guava", module "guava", versionPattern "-android$", reason "The build uses the jre variant" }
+    ]
+    excludeConfigurations ["unresolvable"]
+  }
+}

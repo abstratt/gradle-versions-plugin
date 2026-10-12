@@ -62,6 +62,13 @@ class VersionsPlugin : Plugin<PluginAware> {
     // https://github.com/ben-manes/gradle-versions-plugin/issues/367
     publishSettingsClasspath(settings.gradle, settings.buildscript.configurations)
 
+    // The carrier that is generated from the plugin's descriptor binds the reaction to the
+    // `dependencyUpdates` block of a settings.gradle.xdcl. It is applied by name, and only where the
+    // XDCL API exists, so that the plugin still loads in a Gradle distribution without it.
+    if (hasXdclApi()) {
+      settings.pluginManager.apply(Class.forName(XDCL_CARRIER, true, VersionsPlugin::class.java.classLoader))
+    }
+
     // Isolated projects isolates the action of gradle.lifecycle.beforeProject so that the state it
     // captures cannot be shared between the projects it configures. This action captures nothing,
     // so the older hook is equivalent and does not require Gradle 8.8. Capturing the settings or a
@@ -120,6 +127,16 @@ class VersionsPlugin : Plugin<PluginAware> {
     }
   }
 }
+
+private fun hasXdclApi(): Boolean =
+  try {
+    Class.forName("org.gradle.api.xdcl.Reaction", false, VersionsPlugin::class.java.classLoader)
+    true
+  } catch (_: ClassNotFoundException) {
+    false
+  }
+
+private const val XDCL_CARRIER = "xdcl.generated.plugins.IoGithubBenManesVersionsPlugin"
 
 internal fun requireMinimumGradleVersion(pluginId: String) {
   if (GradleVersion.current() < GradleVersion.version("8.4")) {
