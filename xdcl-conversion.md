@@ -127,6 +127,97 @@ Still Kotlin/Groovy-only, because XDCL holds data and no code: `resolutionStrate
 - `.github/workflows/build.yml`: matrix reduced to JDK 17 and 21, `-x testOn8` dropped,
   `examples/xdcl` added to the examples step.
 
+## Is the new configuration better than what it replaced?
+
+Short answer: for the plugin's consumers it is a real improvement within a limited scope; for the
+project's own build it is close to neutral, and in a few respects a step back. The conversion did
+not replace the imperative code, it added a declarative layer beside it.
+
+### The project's own build
+
+| | Before | After |
+|---|---|---|
+| Settings | `settings.gradle.kts`, 34 lines | `settings.gradle.xdcl`, 15 lines |
+| Root build script | `build.gradle.kts`, 102 lines | removed, folded into the module |
+| Module build script | `build.gradle.kts`, 226 lines | `build.gradle.kts`, 275 lines |
+| Total | 362 lines, all Kotlin DSL | 290 lines, 15 of them XDCL |
+
+Better:
+
+- The settings file is pure data. It is validated in milliseconds by `xdcl-lsp-client` without
+  running Gradle, and it cannot contain logic such as the old `System.getenv("CI")` read.
+- Plugin metadata for `io.github.ben-manes.versions` (display name, description, tags,
+  implementation class) is declared once in the descriptor instead of through `gradle.properties`
+  lookups in a `gradlePlugin {}` block.
+- One build script instead of two; the `allprojects {}` / `subprojects {}` cross-configuration is
+  gone.
+
+Not better, or worse:
+
+- 95% of the build logic is still imperative Kotlin DSL. The built-in declarative project type
+  cannot express test suites, publishing, lint, docs or custom tasks, so none of that moved.
+- The drop from 362 to 290 lines comes almost entirely from deleting the minimum-Gradle machinery
+  (Gradle 8.4 API compile, `minimumGradleTest`, `testOn8` / `testOn11`), which was a consequence of
+  compiling against the XDCL distribution, not a gain from the language.
+- Two things were lost because the settings schema cannot say them: the Develocity `buildScan`
+  configuration and `FAIL_ON_PROJECT_REPOS`.
+- The build now depends on a snapshot Gradle distribution instead of a stable release.
+- The project gave up a guarantee it had: the compiler no longer rejects calls into APIs newer than
+  Gradle 8.4, and nothing runs the suite on JDK 8 or 11 any more.
+
+### The plugin's consumer-facing configuration
+
+Before, a consumer had no configuration model at all: they imported `DependencyUpdatesTask` and
+set properties on the task from a build script. After, they can write a `dependencyUpdates` block
+in `settings.gradle.xdcl`.
+
+Better:
+
+- **Typed, closed values.** `revision`, `gradleReleaseChannel` and `outputFormatter` were plain
+  strings (`outputFormatter` was `Any?`); a typo was found at execution time, if at all. They are
+  now symbol sets, so `revision :relase` is rejected when the settings are evaluated, and by the
+  editor before that.
+- **A schema that documents itself.** The 15 properties, their types and their defaults are stated
+  in 67 lines of `versions.xdsl`, which tooling reads for completion, hover and validation. Before,
+  the same information was spread over a roughly 800-line task class and the README.
+- **No import and no task lookup.** The block replaces
+  `tasks.named<DependencyUpdatesTask>("dependencyUpdates") { … }`, and the settings-level
+  `gradle.rootProject { tasks.withType(…).configureEach { … } }` pattern the README documents.
+- **Configuration-cache safe by construction.** A Kotlin `rejectVersionIf { … }` lambda can capture
+  the build script, in which case the task marks itself incompatible with the configuration cache
+  and warns. The declarative rules are plain strings and patterns, so that cannot happen; the new
+  spec verifies cache reuse with all three rule kinds set.
+- **Rejection reasons.** A `rejectVersions` rule carries its own `reason`; `rejectVersionIf` always
+  reports the fixed text "Rejected by rejectVersionIf".
+
+Not better, or worse:
+
+- **Less expressive.** The most common rule in the README,
+  `candidate.version.isNonStable() && !currentVersion.isNonStable()`, compares the candidate with
+  the version in use and cannot be written as a `rejectVersions` rule. `rejectPreReleases true`
+  with `preReleasePatterns` covers the usual intent, but not arbitrary logic. `resolutionStrategy`,
+  `filterConfigurations`, `exemptFromBuiltInChecksIf` and custom formatters have no declarative form.
+- **Narrower reach.** The block configures the root project's task only. The Kotlin DSL can also
+  configure a subproject's task separately.
+- **Only on XDCL-enabled Gradle.** On a stock distribution nothing changes for consumers.
+- **Two surfaces to maintain.** The task API is unchanged and the block sits on top of it: 67 lines
+  of schema, an 8-line descriptor, a 167-line reaction and a 208-line spec. Each new task option
+  now has to be added in the task, the schema, the reaction and the README mapping table.
+- **Names diverge slightly.** `reportFileName` (block) versus `reportfileName` (task), and
+  `excludeConfigurations` is the inverse of `filterDeclaredConfigurations`.
+
+### Overall
+
+The consumer block is a superior way to state the common configuration: it is shorter, typed,
+checked early and safe for the configuration cache. It is not a replacement for the Kotlin/Groovy
+API, which remains necessary for anything that needs logic.
+
+For the project's own build, the honest result is that XDCL today covers the settings file and
+plugin registration, and little else. The largest practical effects of this conversion on the
+build were side effects: fewer supported targets and a snapshot distribution. Whether that trade is
+worth it depends on whether the goal is to ship the consumer block (a companion module would have
+achieved that while keeping Gradle 8.4 and Java 8 support) or to exercise XDCL on a real plugin.
+
 ## Verification
 
 ### Verified
