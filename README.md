@@ -205,11 +205,70 @@ gradle.rootProject {
 
 </details>
 
+A build whose settings are written in XDCL configures the task from its
+`settings.gradle.xdcl` instead, as [Configuring from XDCL](#configuring-from-xdcl)
+describes.
+
 Every task property is covered in [Task properties](#task-properties), which
 opens with [a recommended configuration](#a-recommended-configuration) most
 builds need: a stability filter so that a pre-release version is not offered
 as an update, and a bound so that an upgrade the build has ruled out is not
 offered either.
+
+### Configuring from XDCL
+
+Applied in a `settings.gradle.xdcl`, on a Gradle distribution with XDCL support,
+the plugin adds a `dependencyUpdates` block to the settings. The block configures
+the root project's `dependencyUpdates` task, whose
+[shared settings](#shared-task-settings) every other project inherits:
+
+"settings.gradle.xdcl":
+```
+settings {
+  plugins [
+    { id "io.github.ben-manes.versions", version "$version" }
+  ]
+
+  dependencyUpdates {
+    revision :release
+    outputFormatter [:plain, :json]
+    rejectPreReleases true
+    preReleasePatterns ["-nf-"]
+    rejectVersions [
+      { group "com.google.guava", versionPattern "-android$", reason "The build uses the jre variant" }
+    ]
+    excludeConfigurations ["jacocoAnt"]
+  }
+}
+```
+
+A property that the block omits keeps the task's default, and a command line
+option or system property takes precedence over the block as it does over a
+build script.
+
+| Property of the block | Task property | Value |
+|---|---|---|
+| `revision` | `revision` | `:release`, `:milestone` or `:integration` |
+| `gradleReleaseChannel` | `gradleReleaseChannel` | `:current`, `:release-candidate` or `:nightly` |
+| `outputFormatter` | `outputFormatter` | a list of `:plain`, `:json`, `:xml`, `:html` and `:problems` |
+| `outputDir` | `outputDir` | a path |
+| `reportFileName` | `reportfileName` | a file name without its extension |
+| `checkForGradleUpdate` | `checkForGradleUpdate` | `true` or `false` |
+| `gradleVersionsApiBaseUrl` | `gradleVersionsApiBaseUrl` | a URL |
+| `checkConstraints` | `checkConstraints` | `true` or `false` |
+| `checkBuildEnvironmentConstraints` | `checkBuildEnvironmentConstraints` | `true` or `false` |
+| `rejectOutOfBounds` | `rejectOutOfBounds` | `true` or `false` |
+| `rejectPreReleases` | `rejectPreReleases` | `true` or `false` |
+| `checkEmbeddedKotlin` | `checkEmbeddedKotlin` | `true` or `false` |
+| `excludeConfigurations` | `filterDeclaredConfigurations` | the names of the configurations to leave out |
+| `preReleasePatterns` | `preReleaseVersionIf` | regular expressions searched for in a version |
+| `rejectVersions` | `rejectVersionIf` | rules of an optional `group` and `module`, a `versionPattern` searched for in the candidate version, and an optional `reason` |
+
+XDCL holds data and no code, so the settings that take a function have no
+equivalent in the block: `resolutionStrategy`, `filterConfigurations`,
+`exemptFromBuiltInChecksIf`, a custom `outputFormatter`, and a `rejectVersionIf`
+or `preReleaseVersionIf` rule that the patterns above cannot express. Those are
+still configured on the task from a Kotlin or Groovy build script.
 
 ## The `dependencyUpdates` task
 
@@ -2704,7 +2763,11 @@ Where the settings plugin can't be used, run the build without the init script.
 Have a look at
 [`examples/kotlin`](https://github.com/ben-manes/gradle-versions-plugin/tree/master/examples/kotlin)
 and
-[`examples/groovy`](https://github.com/ben-manes/gradle-versions-plugin/tree/master/examples/groovy)
+[`examples/groovy`](https://github.com/ben-manes/gradle-versions-plugin/tree/master/examples/groovy),
+and at
+[`examples/xdcl`](https://github.com/ben-manes/gradle-versions-plugin/tree/master/examples/xdcl)
+for a build configured from a `settings.gradle.xdcl`, which includes the plugin's
+own build and needs nothing published.
 
 ```bash
 # Publish the latest version of the plugin to mavenLocal()
@@ -2713,12 +2776,16 @@ $ ./gradlew publishToMavenLocal
 # Try out the samples
 $ ./gradlew -p examples/kotlin dependencyUpdates
 $ ./gradlew -p examples/groovy dependencyUpdates
+$ (cd examples/xdcl && ../../gradlew dependencyUpdates)
 ```
 
 ## Compatibility
 
 The plugin requires Gradle 8.4 or later, checked when the plugin is applied. It
-targets Java 8 bytecode, so it runs on any JVM that can run Gradle itself.
+targets Java 17 bytecode, so the Gradle daemon has to run on JDK 17 or later.
+The `dependencyUpdates` block of a `settings.gradle.xdcl` requires a Gradle
+distribution with XDCL support, and the plugin is built and tested with one; on
+any other distribution the plugin is configured from a build script as before.
 Parallel execution, the configuration cache, configure on demand, and isolated
 projects (see [Isolated projects](#isolated-projects)) are supported.
 

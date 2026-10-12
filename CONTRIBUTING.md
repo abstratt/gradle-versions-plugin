@@ -34,22 +34,23 @@ How a pull request lands:
 ## Building and testing
 
 - `./gradlew build` compiles the plugin and runs its Spock specs, including the
-  functional tests that drive real Gradle builds through TestKit, twice: on the
-  build's own JDK against the Gradle running the build, and on JDK 8 against
-  our minimum supported Gradle version.
+  functional tests that drive real Gradle builds through TestKit, on the build's
+  own JDK against the Gradle running the build.
+- The build itself is configured in `settings.gradle.xdcl`, and the wrapper pins
+  an XDCL-enabled Gradle distribution, which the plugin's own schema in
+  `gradle-versions-plugin/src/main/xdcl` is compiled by as well.
 - The build cache is on. A test task is restored from the cache rather than
   run again, in another worktree or after `clean` too, whenever its inputs
   have not changed. `--rerun-tasks` runs it again.
 - `./gradlew test` alone is the fast loop while developing.
-  `./gradlew testOnAllJdks` runs the suite on JDK 8, 11, 17, 21 and 25, as the
-  build workflow does, and `testOn8` through `testOn25` run it on one JDK.
-  `testOn25` runs `test`, which already runs on JDK 25. On JDK 8 and 11 the
-  suite runs against our minimum supported Gradle version.
+  `./gradlew testOnAllJdks` runs the suite on JDK 17, 21 and 25, as the
+  build workflow does, and `testOn17` through `testOn25` run it on one JDK.
+  `testOn25` runs `test`, which already runs on JDK 25.
 - `--tests` filters only the test task just before it, so repeat it after each
   one:
 
   ```bash
-  ./gradlew test --tests '*ConstraintsSpec' testOn8 --tests '*ConstraintsSpec'
+  ./gradlew test --tests '*ConstraintsSpec' testOn17 --tests '*ConstraintsSpec'
   ```
 
 - The daemon runs on the JDK named in `gradle/gradle-daemon-jvm.properties`,
@@ -57,11 +58,11 @@ How a pull request lands:
   launcher itself only has to be Java 8 or newer. The older JDKs the suite runs
   on are found the same way: install them, or let Gradle fetch them.
 - On Windows, `gradlew.bat` stands in for `./gradlew` throughout.
-- The plugin targets Java 8 bytecode: it runs in the Gradle daemon's process,
-  and our minimum supported Gradle version of 8.4 still supports Java 8. The
-  compiler is held to the Java 8 API as well as to its bytecode, and to the
-  Gradle 8.4 API, so a newer API fails to compile rather than failing at runtime
-  on an older daemon. Raising the target means raising the minimum Gradle first.
+- The plugin targets Java 17 bytecode and is compiled against the API of the
+  XDCL-enabled Gradle that the wrapper pins, which the reaction to a
+  `settings.gradle.xdcl` requires. The compiler no longer holds the plugin to
+  the Gradle 8.4 API, so only the specs that drive an older release catch a
+  call into a newer one.
 - To try a change against a real build, publish it under a version of its
   own and point the consumer at that:
 

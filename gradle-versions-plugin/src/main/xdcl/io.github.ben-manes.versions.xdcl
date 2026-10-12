@@ -1,0 +1,8 @@
+plugin {
+  displayName "Gradle Versions Plugin"
+  description "Gradle plugin that provides tasks for discovering dependency updates."
+  tags ["dependencies", "versions", "updates"]
+  // The class applies the generated carrier itself, which is what binds the reaction below.
+  implementationClass :com.github.benmanes.gradle.versions.VersionsPlugin
+  reactions [:com.github.benmanes.gradle.versions.xdcl.DependencyUpdatesReaction]
+}

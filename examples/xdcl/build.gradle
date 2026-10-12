@@ -1,0 +1,13 @@
+plugins {
+  id 'java-library'
+}
+
+configurations {
+  unresolvable
+}
+
+dependencies {
+  implementation 'com.google.guava:guava:30.0-jre'
+  implementation 'com.google.inject:guice:5.0.1'
+  unresolvable 'com.github.ben-manes:unresolvable:1.0'
+}

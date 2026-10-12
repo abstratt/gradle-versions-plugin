@@ -19,7 +19,7 @@ env:
 
 jobs:
   # The wrapper runs on the newest JDK, and the toolchain task forks the test worker onto the row's
-  # JDK, which the TestKit daemons then start on. JDK 8 compiles the specs for the rows below 17.
+  # JDK, which the TestKit daemons then start on.
   jvm:
     name: Test on JDK ${{ matrix.java-version }}
     runs-on: ubuntu-latest
@@ -28,8 +28,6 @@ jobs:
       fail-fast: false
       matrix:
         java-version:
-          - 8
-          - 11
           - 17
           - 21
 
@@ -46,7 +44,6 @@ jobs:
         with:
           distribution: temurin
           java-version: |
-            8
             ${{ matrix.java-version }}
             25
 
@@ -103,9 +100,8 @@ jobs:
         with:
           cache-provider: enhanced
 
-      # The JDK 8 row of the matrix runs the leg that `check` adds.
       - name: Run build with caching enabled
-        run: ./gradlew clean build -x testOn8 -s
+        run: ./gradlew clean build -s
 
       - name: Publish Test Report
         uses: EnricoMi/publish-unit-test-result-action@v2.24.0
@@ -123,6 +119,7 @@ jobs:
           cat ~/.m2/repository/io/github/ben-manes/gradle-versions-plugin/$VERSION_NAME/gradle-versions-plugin-$VERSION_NAME.pom
           cd examples/groovy/ && ../../gradlew dU && cd -
           cd examples/kotlin/ && ../../gradlew dU && cd -
+          cd examples/xdcl/ && ../../gradlew dU && cd -
 
       # The wrapper pins the examples to the latest Gradle, so the samples are run against the
       # minimum supported release as well, on a JDK that release starts on.

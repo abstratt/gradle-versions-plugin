@@ -1,4 +1,12 @@
+import org.gradle.api.JavaVersion.VERSION_17
+import org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+import org.gradle.api.tasks.testing.logging.TestLogEvent.FAILED
+import org.gradle.api.tasks.testing.logging.TestLogEvent.PASSED
+import org.gradle.api.tasks.testing.logging.TestLogEvent.SKIPPED
 import org.gradle.plugin.compatibility.compatibility
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+import org.jetbrains.kotlin.gradle.dsl.KotlinVersion.KOTLIN_2_0
+import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
   alias(libs.plugins.kotlin.jvm)
@@ -9,16 +17,90 @@ plugins {
   `java-gradle-plugin`
   `java-library`
   groovy
+  // Built into the XDCL-enabled distribution: generates the facades of `src/main/xdcl` and registers
+  // the plugin that the descriptor there declares.
+  id("xdcl-gradle-plugin")
 }
 
 group = property("GROUP").toString()
 version = property("VERSION_NAME").toString()
 
-// The plugin runs in every Gradle from the oldest supported release on, so it compiles against that
-// release's API in place of the API of the Gradle running this build, which `java-gradle-plugin`
-// adds. A call into a newer API then fails to compile instead of failing at runtime on an older Gradle.
-configurations.compileOnlyApi {
-  dependencies.removeIf { it is FileCollectionDependency }
+configurations.configureEach {
+  resolutionStrategy {
+    preferProjectModules()
+
+    enableDependencyVerification()
+  }
+}
+
+tasks.withType<Jar>().configureEach {
+  manifest {
+    attributes(
+      "Implementation-Title" to project.property("POM_NAME").toString(),
+      "Implementation-Version" to project.property("VERSION_NAME").toString(),
+      "Built-By" to System.getProperty("user.name"),
+      "Built-JDK" to System.getProperty("java.version"),
+      "Built-Gradle" to gradle.gradleVersion,
+    )
+  }
+}
+
+tasks.withType<KotlinJvmCompile>().configureEach {
+  compilerOptions {
+    jvmTarget.set(JVM_17)
+    // The build runs on a JDK newer than the target, so bound the API as well as the bytecode.
+    freeCompilerArgs.add("-Xjdk-release=17")
+    // Kotlin code compiled against the plugin, such as a precompiled script plugin in buildSrc,
+    // is compiled by the Kotlin embedded in the running Gradle, which reads metadata at most one
+    // release newer than its own.
+    languageVersion.set(KOTLIN_2_0)
+  }
+}
+
+tasks.withType<JavaCompile>().configureEach {
+  options.apply {
+    release.set(VERSION_17.majorVersion.toInt())
+    compilerArgs = compilerArgs +
+      listOf(
+        "-Xlint:all",
+        "-Xlint:-processing",
+      )
+    encoding = "utf-8"
+    isFork = true
+  }
+}
+
+tasks.withType<GroovyCompile>().configureEach {
+  sourceCompatibility = VERSION_17.toString()
+  targetCompatibility = VERSION_17.toString()
+
+  options.apply {
+    compilerArgs = compilerArgs +
+      listOf(
+        "-Xlint:all",
+        "-Xlint:-processing",
+      )
+    encoding = "utf-8"
+    isFork = true
+  }
+}
+
+tasks.withType<Test>().configureEach {
+  useJUnitPlatform() // Ensure JUnit Platform is used if you are using JUnit 5 or Spock 2.x
+
+  testLogging {
+    exceptionFormat = FULL
+    showCauses = true
+    showExceptions = true
+    showStackTraces = true
+    showStandardStreams = true
+    events = setOf(PASSED, FAILED, SKIPPED)
+  }
+
+  // A path relative to the project directory, which is the worker's working directory, so that
+  // the test task's inputs are the same in every checkout.
+  systemProperty("testKitPool", ".gradle/testkit/$name")
+  maxParallelForks = (gradle.startParameter.maxWorkerCount / 2).coerceIn(1, 4)
 }
 
 // The Problems API is newer than the oldest supported release, so the class that reports to it is
@@ -45,29 +127,9 @@ tasks.pluginUnderTestMetadata {
   pluginClasspath.from(problems.output)
 }
 
-// Some specs load Gradle in process, and the Gradle running this build does not start below JDK 17.
-// The specs are compiled a second time against the oldest supported release for the older JDKs, so
-// that both the in-process specs and the TestKit specs run against that release there.
-val minimumGradleTest =
-  sourceSets.create("minimumGradleTest") {
-    groovy.setSrcDirs(listOf("src/test/groovy"))
-    resources.setSrcDirs(listOf("src/test/resources"))
-    compileClasspath += sourceSets.main.get().output
-    runtimeClasspath += sourceSets.main.get().output + problems.output
-  }
-
-configurations.named(minimumGradleTest.implementationConfigurationName) {
-  extendsFrom(configurations.implementation.get())
-}
-
-// Groovy 3 fails on the class files of the JDK this build runs on.
-tasks.named<GroovyCompile>(minimumGradleTest.getCompileTaskName("groovy")) {
-  javaLauncher.set(javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) })
-}
-
 // The wrapper runs on the newest JDK, so the older ones are reached through toolchains: the test
 // worker forks on the named JDK and the TestKit daemons follow it. `test` stays on the build JVM as
-// the fast loop, and `check` runs JDK 8 on the oldest supported Gradle as well, the opposite corner.
+// the fast loop.
 val testOnAllJdks =
   tasks.register("testOnAllJdks") {
     description = "Runs the test suite on every JDK the plugin supports."
@@ -102,14 +164,28 @@ val specsRepository =
         rename("module\\.json", "${project.name}-$pluginVersion.module")
       }
     }
+    // The descriptor's plugin is declared under a name that the XDCL plugin chooses, which the
+    // marker publication's tasks are named after.
+    val declaration = gradlePlugin.plugins.single { it.id == pluginId }.name.replaceFirstChar { it.uppercase() }
     into("${pluginId.replace('.', '/')}/$pluginId.gradle.plugin/$pluginVersion") {
-      from(tasks.named("generatePomFileForVersionsPluginPluginMarkerMavenPublication")) {
+      from(tasks.named("generatePomFileFor${declaration}PluginMarkerMavenPublication")) {
         rename("pom-default\\.xml", "$pluginId.gradle.plugin-$pluginVersion.pom")
       }
     }
   }
 
-listOf(8, 11, 17, 21).forEach { jdk ->
+// Every test task gets the repository: a settings.gradle.xdcl reads a plugin's schema from the plugin
+// that it resolves, which TestKit's plugin classpath is not.
+tasks.withType<Test>().configureEach {
+  inputs.files(specsRepository).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("specsRepository")
+  systemProperty("specsRepository", specsRepositoryDir.get().asFile.relativeTo(projectDir).path)
+  systemProperty("pluginId", pluginId)
+  systemProperty("pluginVersion", pluginVersion)
+}
+
+// The build JDK already has its task above, which matters when another build includes this one and
+// runs it on a JDK of its own.
+listOf(17, 21).filter { it.toString() != buildJdk }.forEach { jdk ->
   val testOnJdk =
     tasks.register<Test>("testOn$jdk") {
       description = "Runs the test suite on JDK $jdk."
@@ -119,30 +195,14 @@ listOf(8, 11, 17, 21).forEach { jdk ->
           languageVersion.set(JavaLanguageVersion.of(jdk))
         },
       )
-      val specs = if (jdk < 17) minimumGradleTest else sourceSets.test.get()
+      val specs = sourceSets.test.get()
       testClassesDirs = specs.output.classesDirs
       classpath = specs.runtimeClasspath
-      // The specs that name no release of their own drive the oldest supported release here too.
-      if (jdk < 17) {
-        systemProperty("testGradleVersion", libs.versions.gradle.minimum.get())
-      }
-      // The specs that resolve the plugin from a repository run Gradle 8.4, which fails to start on the
-      // build JVM.
-      inputs.files(specsRepository).withPathSensitivity(PathSensitivity.RELATIVE).withPropertyName("specsRepository")
-      systemProperty("specsRepository", specsRepositoryDir.get().asFile.relativeTo(projectDir).path)
-      systemProperty("pluginId", pluginId)
-      systemProperty("pluginVersion", pluginVersion)
     }
   testOnAllJdks.configure { dependsOn(testOnJdk) }
 }
 
-tasks.check {
-  dependsOn("testOn8")
-}
-
 dependencies {
-  compileOnly(libs.gradle.api.minimum)
-  compileOnly(libs.groovy.minimum)
   compileOnly(libs.kotlin.stdlib)
   implementation(libs.moshi)
 
@@ -156,26 +216,15 @@ dependencies {
   testImplementation(libs.kotlin.reflect)
   testImplementation(libs.spock) { exclude(module = "groovy-all") }
   testRuntimeOnly(libs.junit.platform.launcher)
-
-  "minimumGradleTestImplementation"(libs.gradle.api.minimum)
-  "minimumGradleTestImplementation"(libs.gradle.test.kit.minimum)
-  "minimumGradleTestImplementation"(libs.groovy.minimum)
-  "minimumGradleTestImplementation"(libs.kotlin.reflect)
-  "minimumGradleTestImplementation"(libs.spock.groovy.minimum) { exclude(module = "groovy-all") }
-  "minimumGradleTestRuntimeOnly"(libs.junit.platform.launcher)
-  "minimumGradleTestRuntimeOnly"(files(tasks.named("pluginUnderTestMetadata")))
 }
 
 gradlePlugin {
   website.set(property("POM_URL").toString())
   vcsUrl.set(property("POM_SCM_URL").toString())
   plugins {
-    create("versionsPlugin") {
-      id = property("PLUGIN_NAME").toString()
-      implementationClass = property("PLUGIN_NAME_CLASS").toString()
-      displayName = property("POM_NAME").toString()
-      description = property("POM_DESCRIPTION").toString()
-      tags.set(listOf("dependencies", "versions", "updates"))
+    // The plugin of this id is declared by its descriptor, `src/main/xdcl/$pluginId.xdcl`, which has
+    // no field for the features that the plugin is compatible with.
+    matching { it.id == pluginId }.configureEach {
       compatibility {
         features {
           configurationCache = true

@@ -1,7 +1,4 @@
 [versions]
-# The oldest Gradle the plugin supports, and the Groovy that release bundles.
-gradle-minimum = "8.4"
-groovy-minimum = "3.0.17"
 kotlin = "2.4.10"
 
 [plugins]
@@ -11,13 +8,9 @@ ktlint = { id = "org.jlleitschuh.gradle.ktlint", version = "14.2.0" }
 plugin-publish = { id = "com.gradle.plugin-publish", version = "2.2.1" }
 
 [libraries]
-gradle-api-minimum = { module = "dev.gradleplugins:gradle-api", version.ref = "gradle-minimum" }
-gradle-test-kit-minimum = { module = "dev.gradleplugins:gradle-test-kit", version.ref = "gradle-minimum" }
-groovy-minimum = { module = "org.codehaus.groovy:groovy-all", version.ref = "groovy-minimum" }
 # Versionless, so that it tracks the JUnit platform that Spock's own bom pins.
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 kotlin-reflect = { module = "org.jetbrains.kotlin:kotlin-reflect", version.ref = "kotlin" }
 kotlin-stdlib = { module = "org.jetbrains.kotlin:kotlin-stdlib", version.ref = "kotlin" }
 moshi = { module = "com.squareup.moshi:moshi-kotlin", version = "1.15.2" }
 spock = { module = "org.spockframework:spock-junit4", version = "2.4-M4-groovy-4.0" }
-spock-groovy-minimum = { module = "org.spockframework:spock-junit4", version = "2.4-M4-groovy-3.0" }

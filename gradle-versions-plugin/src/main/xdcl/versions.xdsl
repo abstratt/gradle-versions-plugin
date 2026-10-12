@@ -1,0 +1,67 @@
+package com.github.benmanes.gradle.versions.xdcl
+
+import xdcl.gradle.bootstrap
+
+/// The stability that a dependency's newest version is selected at.
+type Revision = Symbol where it in [:release, :milestone, :integration]
+
+/// The stability that the newest Gradle release is selected at.
+type ReleaseChannel = Symbol where it in [:current, :release-candidate, :nightly]
+
+/// A built-in format of the dependency updates report.
+type OutputFormat = Symbol where it in [:plain, :json, :xml, :html, :problems]
+
+/// Rejects the candidate versions that it matches, so that they are not reported as an update.
+record RejectRule {
+  /// The group of the dependencies that the rule applies to, or every group when omitted.
+  group: String?
+  /// The name of the dependencies that the rule applies to, or every name when omitted.
+  module: String?
+  /// A regular expression that is searched for in the candidate version.
+  versionPattern: String
+  /// Why the version is rejected, as shown in the report.
+  reason: String?
+}
+
+/// Configures the `dependencyUpdates` task of the root project. A property that is omitted keeps
+/// the task's default, and a command-line option or system property still takes precedence.
+extension DependencyUpdates for Settings {
+  dependencyUpdates {
+    /// The stability to select the newest version at. Defaults to `:milestone`.
+    revision: Revision?
+    /// The stability to select the newest Gradle release at. Defaults to `:release-candidate`, or
+    /// to `:current` when [rejectPreReleases] is set.
+    gradleReleaseChannel: ReleaseChannel?
+    /// The formats to write the report in. Defaults to `[:plain, :problems]`.
+    outputFormatter: [OutputFormat]?
+    /// The directory to write the report into, relative to the project directory. Defaults to
+    /// `build/dependencyUpdates`.
+    outputDir: String?
+    /// The name of the report file, without its extension. Defaults to `report`.
+    reportFileName: String?
+    /// Whether to check for a newer Gradle release. Defaults to `true`.
+    checkForGradleUpdate: Bool?
+    /// The service that the Gradle releases are read from. Defaults to
+    /// `https://services.gradle.org/versions/`.
+    gradleVersionsApiBaseUrl: String?
+    /// Whether to report the updates of dependency constraints. Defaults to `false`.
+    checkConstraints: Bool?
+    /// Whether to report the updates of the constraints of the build environment. Defaults to
+    /// `false`.
+    checkBuildEnvironmentConstraints: Bool?
+    /// Whether to reject a version outside of the bounds that the dependency declares. Defaults to
+    /// `true`.
+    rejectOutOfBounds: Bool?
+    /// Whether to reject a pre-release when the current version is a release. Defaults to `false`.
+    rejectPreReleases: Bool?
+    /// Whether to report the updates of the Kotlin embedded in Gradle. Defaults to `false`.
+    checkEmbeddedKotlin: Bool?
+    /// The names of the configurations whose dependencies are left out of the report.
+    excludeConfigurations: [String]?
+    /// Regular expressions that are searched for in a version, any of which marks the version as a
+    /// pre-release in addition to the built-in qualifiers.
+    preReleasePatterns: [String]?
+    /// The candidate versions to reject.
+    rejectVersions: [RejectRule]?
+  }
+}
